@@ -18,12 +18,12 @@
 
 4. goenmultimodal.html　をダウンロード
 
-5.ブラウザで goenmultimodal.html を開く
+5. ブラウザで goenmultimodal.html を開く
 
 ## HTMLファイル
-goenmultimodal.html　マルチモーダル対応。
-goenmagi.html　賛成か反対かを審議。
-goenproofreading.html　文章を校正。
+- goenmultimodal.html　マルチモーダル対応。
+- goenmagi.html　賛成か反対かを審議。
+- goenproofreading.html　文章を校正。
 
 ## 注意
 - ローカルで1台だけの利用なら * でOKです。
