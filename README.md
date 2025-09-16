@@ -2,6 +2,8 @@
 
 このリポジトリは、Ollamaを使ったローカルLLM環境構築のサンプルです。  
 自作HTMLをブラウザから開くことで、`http://localhost:11434/api/chat` に接続し、ローカルのモデルを利用できます。
+詳しい説明はnoteで紹介しています。
+https://note.com/_cop/n/n397f3341f57d
 
 ## セットアップ手順
 1. Ollamaをインストール  
