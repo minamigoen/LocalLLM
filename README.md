@@ -5,7 +5,7 @@
 
 ## セットアップ手順
 1. Ollamaをインストール  
-   https://ollama.com/download  
+[Ollama ダウンロード](https://ollama.com/download){:target="_blank"}
 
 2. モデルをダウンロード
    ```bash
