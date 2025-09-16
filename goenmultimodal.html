@@ -1,0 +1,713 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GOEN_LLM::SYSTEM_INTERFACE</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&display=swap" rel="stylesheet">
+    <!-- Required Libraries for File Parsing -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+    <!-- ★ Markdown Parser Library -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script>
+        pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js`;
+    </script>
+    <style>
+        :root {
+            --bg-color: #0d0f18;
+            --panel-bg: rgba(22, 28, 53, 0.7);
+            --border-color: rgba(0, 191, 255, 0.5);
+            --glow-color: #00bfff;
+            --accent-color: #ff00ff;
+            --text-color: #e0e0e0;
+            --font-family: 'Orbitron', sans-serif;
+            --code-bg: rgba(0, 0, 0, 0.3);
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        @keyframes pulse {
+            0% { box-shadow: 0 0 15px rgba(0, 191, 255, 0.3), 0 0 20px rgba(0, 191, 255, 0.5); }
+            50% { box-shadow: 0 0 25px rgba(0, 191, 255, 0.6), 0 0 30px rgba(0, 191, 255, 0.8); }
+            100% { box-shadow: 0 0 15px rgba(0, 191, 255, 0.3), 0 0 20px rgba(0, 191, 255, 0.5); }
+        }
+
+        body {
+            font-family: var(--font-family);
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+            background-image:
+                linear-gradient(rgba(0, 191, 255, 0.1) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(0, 191, 255, 0.1) 1px, transparent 1px);
+            background-size: 30px 30px;
+        }
+        
+        body::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(to bottom, rgba(13, 15, 24, 0) 50%, rgba(13, 15, 24, 1) 100%);
+            pointer-events: none;
+        }
+
+        .chat-container {
+            width: 95%;
+            max-width: 800px;
+            height: 90vh;
+            background-color: var(--panel-bg);
+            border: 1px solid var(--border-color);
+            backdrop-filter: blur(10px);
+            box-shadow: 0 0 15px rgba(0, 191, 255, 0.3);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            animation: fadeIn 1s ease-out;
+            position: relative;
+            transition: box-shadow 0.3s ease;
+        }
+        
+        .chat-container.dragover {
+            animation: pulse 1.5s infinite;
+        }
+
+        .corner {
+            position: absolute;
+            width: 20px;
+            height: 20px;
+            border-color: var(--glow-color);
+            border-style: solid;
+        }
+        .corner.top-left { top: -1px; left: -1px; border-width: 2px 0 0 2px; }
+        .corner.top-right { top: -1px; right: -1px; border-width: 2px 2px 0 0; }
+        .corner.bottom-left { bottom: -1px; left: -1px; border-width: 0 0 2px 2px; }
+        .corner.bottom-right { bottom: -1px; right: -1px; border-width: 0 2px 2px 0; }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 20px;
+            border-bottom: 1px solid var(--border-color);
+            text-shadow: 0 0 5px var(--glow-color);
+        }
+
+        .header h1 { font-size: 1.2rem; margin: 0; letter-spacing: 2px; }
+        .controls { display: flex; align-items: center; gap: 10px; }
+
+        #model-selector, #new-chat-button {
+            background-color: transparent;
+            border: 1px solid var(--border-color);
+            color: var(--text-color);
+            padding: 6px 12px;
+            font-family: var(--font-family);
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        #model-selector:hover, #new-chat-button:hover {
+            background-color: var(--border-color);
+            box-shadow: 0 0 10px var(--glow-color);
+        }
+        #model-selector option { background-color: var(--bg-color); color: var(--text-color); }
+
+        .chat-history {
+            flex-grow: 1;
+            padding: 20px;
+            overflow-y: auto;
+            scrollbar-width: thin;
+            scrollbar-color: var(--accent-color) transparent;
+        }
+        
+        .message {
+            margin-bottom: 20px;
+            border: 1px solid transparent;
+            padding: 10px;
+            position: relative;
+        }
+        .message.user { border-left-color: var(--accent-color); }
+        .message.ai { border-left-color: var(--glow-color); }
+        .message-sender {
+            font-weight: bold;
+            margin-bottom: 5px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .message-sender.user { color: var(--accent-color); }
+        .message-sender.ai { color: var(--glow-color); }
+        
+        .ai-icon {
+            width: 24px;
+            height: 24px;
+            filter: drop-shadow(0 0 3px var(--glow-color));
+        }
+
+        .message-content { white-space: pre-wrap; word-wrap: break-word; line-height: 1.6; position: relative; }
+        .message-content img { max-width: 200px; margin-top: 10px; border: 1px solid var(--border-color); }
+        .message-content .attachment-info { font-style: italic; font-size: 0.8em; opacity: 0.7; border-left: 2px solid var(--border-color); padding-left: 10px; margin-top: 10px; }
+        .copy-button {
+            position: absolute;
+            bottom: -5px;
+            right: 0;
+            background: transparent;
+            border: 1px solid var(--border-color);
+            color: var(--text-color);
+            cursor: pointer;
+            padding: 2px 6px;
+            font-size: 0.7rem;
+            font-family: var(--font-family);
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        .message.ai:hover .copy-button { opacity: 1; }
+
+        /* ★ Markdown and Code Block Styles */
+        .message-content h1, .message-content h2, .message-content h3 {
+            color: var(--glow-color);
+            text-shadow: 0 0 3px var(--glow-color);
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 5px;
+        }
+        .message-content strong { color: var(--accent-color); }
+        .message-content a { color: var(--glow-color); }
+        .message-content ul, .message-content ol { padding-left: 25px; }
+        .message-content li::marker { color: var(--glow-color); }
+        .message-content pre {
+            background-color: var(--code-bg);
+            border: 1px solid var(--border-color);
+            padding: 15px;
+            border-radius: 4px;
+            overflow-x: auto;
+            position: relative;
+        }
+        .message-content code {
+            font-family: 'Courier New', Courier, monospace;
+            background-color: var(--code-bg);
+            padding: 2px 4px;
+            border-radius: 3px;
+        }
+        .message-content pre code { padding: 0; background: none; }
+        .copy-code-button {
+            position: absolute;
+            top: 5px;
+            right: 5px;
+            background: var(--border-color);
+            border: none;
+            color: var(--text-color);
+            cursor: pointer;
+            padding: 3px 8px;
+            font-size: 0.8rem;
+            font-family: var(--font-family);
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        .message-content pre:hover .copy-code-button { opacity: 1; }
+
+
+        .input-container {
+            border-top: 1px solid var(--border-color);
+            padding: 15px;
+            background: linear-gradient(to top, rgba(13, 15, 24, 0.8), transparent);
+        }
+        .input-area { display: flex; gap: 10px; align-items: center; }
+
+        textarea {
+            flex-grow: 1;
+            background-color: rgba(0,0,0,0.2);
+            border: 1px solid var(--border-color);
+            color: var(--text-color);
+            padding: 12px;
+            resize: none;
+            font-size: 1rem;
+            font-family: var(--font-family);
+            max-height: 150px;
+        }
+        textarea:focus {
+            outline: none;
+            box-shadow: 0 0 10px var(--glow-color);
+        }
+        
+        .button {
+            background: transparent;
+            border: 1px solid var(--border-color);
+            cursor: pointer;
+            padding: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s ease;
+        }
+        .button:hover { background-color: var(--border-color); box-shadow: 0 0 10px var(--glow-color); }
+        .button svg { width: 24px; height: 24px; fill: var(--text-color); }
+        #send-button { border-color: var(--accent-color); }
+        #send-button:hover { background-color: var(--accent-color); box-shadow: 0 0 10px var(--accent-color); }
+
+        #previews-container { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 10px; max-height: 120px; overflow-y: auto; }
+        .preview-item { position: relative; }
+        .preview-item img { max-width: 80px; max-height: 80px; border: 1px solid var(--border-color); }
+        .preview-item .filename { font-size: 0.8em; background: rgba(0,0,0,0.7); padding: 5px; border-radius: 4px; }
+        .remove-file-button { position: absolute; top: -5px; right: -5px; background: var(--accent-color); color: white; border: none; border-radius: 50%; width: 20px; height: 20px; cursor: pointer; }
+    </style>
+</head>
+<body>
+
+    <div class="chat-container" id="chat-container">
+        <div class="corner top-left"></div><div class="corner top-right"></div>
+        <div class="corner bottom-left"></div><div class="corner bottom-right"></div>
+
+        <div class="header">
+            <h1>[GOEN_LOCAL_LLM]</h1>
+            <div class="controls">
+                <select id="model-selector">
+                    <option value="gemma3:4b">Gemma3 4B (Default)</option>
+                    <option value="gemma3:12b">Gemma3 12B</option>
+                    <option value="llama3:latest">Llama 3</option>
+                    <option value="deepseek-r1:latest">DeepSeek R1</option>
+                    <option value="zephyr:latest">Zephyr</option>
+                    <option value="openhermes:latest">OpenHermes</option>
+                    <option value="mistral:latest">Mistral</option>
+                    <option value="gemma:latest">Gemma</option>
+                </select>
+                <button id="new-chat-button">::NEW_SESSION::</button>
+            </div>
+        </div>
+        <div class="chat-history" id="chat-history"></div>
+        <div class="input-container">
+            <div class="input-area">
+                <input type="file" id="file-input" accept="image/*,application/pdf,.csv,.txt,.xlsx,.xls,.docx" multiple style="display: none;">
+                <button id="attach-button" class="button" title="Attach File">
+                    <svg viewBox="0 0 24 24"><path d="M21.586 10.414l-8.586-8.586c-2.343-2.343-6.142-2.343-8.485 0s-2.343 6.142 0 8.485l10 10c1.562 1.562 4.095 1.562 5.657 0s1.562-4.095 0-5.657l-8.586-8.586c-.781-.781-2.047-.781-2.828 0s-.781 2.047 0 2.828l7.172 7.172c.39.39 1.024.39 1.414 0s.39-1.024 0-1.414l-7.172-7.172-1.414 1.414 7.172 7.172c-1.172 1.172-3.071 1.172-4.243 0s-1.172-3.071 0-4.243l8.586 8.586c1.953 1.953 1.953 5.119 0 7.071s-5.119 1.953-7.071 0l-10-10c-3.124-3.124-3.124-8.189 0-11.313s8.189-3.124 11.313 0l8.586 8.586c.391.391.391 1.024 0 1.414s-1.024.391-1.414 0z"/></svg>
+                </button>
+                <button id="paste-button" class="button" title="Paste from Clipboard">
+                    <svg viewBox="0 0 24 24"><path d="M19,21H8V7H19M19,5H8A2,2 0 0,0 6,7V21A2,2 0 0,0 8,23H19A2,2 0 0,0 21,21V7A2,2 0 0,0 19,5M16,1H4A2,2 0 0,0 2,3V17H4V3H16V1Z"/></svg>
+                </button>
+                <textarea id="prompt-input" rows="1" placeholder="> COMMAND_INPUT..."></textarea>
+                <button id="send-button" class="button" title="Execute">
+                    <svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+                </button>
+            </div>
+             <div id="previews-container"></div>
+        </div>
+    </div>
+
+    <script>
+        // --- DOM Elements ---
+        const chatContainer = document.getElementById('chat-container');
+        const sendButton = document.getElementById('send-button');
+        const promptInput = document.getElementById('prompt-input');
+        const chatHistory = document.getElementById('chat-history');
+        const modelSelector = document.getElementById('model-selector');
+        const newChatButton = document.getElementById('new-chat-button');
+        const attachButton = document.getElementById('attach-button');
+        const pasteButton = document.getElementById('paste-button');
+        const fileInput = document.getElementById('file-input');
+        const previewsContainer = document.getElementById('previews-container');
+
+        // --- State ---
+        let attachedFiles = [];
+        let conversationHistory = [];
+
+        // --- SVG Icon Data ---
+        const characterData = {
+            shiro: {
+                name: "SHIRO",
+                icon: `<svg class="ai-icon" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><path d="M50,20 A30,28 0,1,1 50,76 A30,28 0,1,1 50,20" /><path d="M25,52 A25,25 0,0,0 75,52" /><ellipse cx="38" cy="45" rx="5" ry="6" fill="currentColor"/><ellipse cx="62" cy="45" rx="5" ry="6" fill="currentColor"/><path d="M40,62 Q50,68 60,62" /><path d="M22,32 Q30,12 45,22" /><path d="M19,35 Q28,15 43,25" /><path d="M28,22 A10,8 0,0,1 38,18" /></svg>`
+            },
+            sora: {
+                name: "SORA",
+                icon: `<svg class="ai-icon" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><path d="M50,25 A25,25 0,1,1 50,75 A25,25 0,1,1 50,25" /><path d="M25,55 A25,25 0,0,0 75,55" /><ellipse cx="40" cy="48" rx="4" ry="5" fill="currentColor"/><ellipse cx="60" cy="48" rx="4" ry="5" fill="currentColor"/><path d="M45,62 Q50,66 55,62" /></svg>`
+            }
+        };
+
+        // --- Event Listeners ---
+        attachButton.addEventListener('click', () => fileInput.click());
+        pasteButton.addEventListener('click', handlePaste);
+        fileInput.addEventListener('change', (e) => handleFiles(e.target.files));
+        sendButton.addEventListener('click', generateResponse);
+        newChatButton.addEventListener('click', () => {
+            chatHistory.innerHTML = '';
+            clearAllFiles();
+            conversationHistory = [];
+        });
+        promptInput.addEventListener('input', () => {
+            promptInput.style.height = 'auto';
+            promptInput.style.height = (promptInput.scrollHeight) + 'px';
+        });
+        promptInput.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                generateResponse();
+            }
+        });
+
+        // Drag & Drop Event Listeners
+        chatContainer.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            chatContainer.classList.add('dragover');
+        });
+        chatContainer.addEventListener('dragleave', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            chatContainer.classList.remove('dragover');
+        });
+        chatContainer.addEventListener('drop', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            chatContainer.classList.remove('dragover');
+            handleFiles(e.dataTransfer.files);
+        });
+        
+        // Global Paste Event Listener
+        document.addEventListener('paste', (e) => {
+            handleFiles(e.clipboardData.files);
+        });
+
+
+        // --- Clipboard Handling ---
+        async function handlePaste() {
+            try {
+                const items = await navigator.clipboard.read();
+                const files = [];
+                for (const item of items) {
+                    for (const type of item.types) {
+                        if (type.startsWith('image/')) {
+                            const blob = await item.getType(type);
+                            files.push(new File([blob], "clipboard-image.png", { type: blob.type }));
+                        }
+                    }
+                }
+                if (files.length > 0) {
+                    handleFiles(files);
+                    return;
+                }
+                const text = await navigator.clipboard.readText();
+                promptInput.value += text;
+                promptInput.focus();
+            } catch (err) {
+                console.error('Failed to read clipboard contents: ', err);
+            }
+        }
+
+        // --- File Handling ---
+        async function handleFiles(files) {
+            if (!files || files.length === 0) return;
+
+            const filePromises = Array.from(files).map(file => {
+                return new Promise((resolve, reject) => {
+                    const fileData = {
+                        id: Date.now() + Math.random(),
+                        name: file.name,
+                        type: null,
+                        content: null
+                    };
+                    const reader = new FileReader();
+
+                    reader.onload = async (e) => {
+                        try {
+                            const fileContent = e.target.result;
+                            if (file.type.startsWith('image/')) {
+                                fileData.type = 'image';
+                                fileData.content = fileContent;
+                            } else if (file.type === 'application/pdf') {
+                                fileData.type = 'text';
+                                fileData.content = await extractTextFromPdf(fileContent);
+                            } else if (file.name.endsWith('.docx')) {
+                                fileData.type = 'text';
+                                fileData.content = await extractTextFromDocx(fileContent);
+                            } else if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
+                                fileData.type = 'text';
+                                fileData.content = await extractTextFromXlsx(fileContent);
+                            } else {
+                                fileData.type = 'text';
+                                fileData.content = fileContent;
+                            }
+                            resolve(fileData);
+                        } catch (error) { reject(error); }
+                    };
+                    reader.onerror = reject;
+
+                    if (file.type.startsWith('image/')) {
+                        reader.readAsDataURL(file);
+                    } else if (file.type === 'application/pdf' || file.name.endsWith('.docx') || file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
+                        reader.readAsArrayBuffer(file);
+                    } else {
+                        reader.readAsText(file);
+                    }
+                });
+            });
+            
+            try {
+                const newFiles = await Promise.all(filePromises);
+                attachedFiles.push(...newFiles);
+                updatePreviews();
+            } catch (error) {
+                console.error("Error processing files:", error);
+                addMessageToHistory('ai', 'ファイルの処理中にエラーが発生しました。', {character: 'sora'});
+            }
+            fileInput.value = '';
+        }
+
+
+        function updatePreviews() {
+            previewsContainer.innerHTML = '';
+            attachedFiles.forEach((fileData, index) => {
+                const item = document.createElement('div');
+                item.className = 'preview-item';
+                
+                if (fileData.type === 'image') {
+                    const img = document.createElement('img');
+                    img.src = fileData.content;
+                    item.appendChild(img);
+                } else {
+                    const span = document.createElement('span');
+                    span.className = 'filename';
+                    span.textContent = fileData.name;
+                    item.appendChild(span);
+                }
+
+                const removeBtn = document.createElement('button');
+                removeBtn.className = 'remove-file-button';
+                removeBtn.textContent = 'X';
+                removeBtn.onclick = () => removeFile(index);
+                item.appendChild(removeBtn);
+
+                previewsContainer.appendChild(item);
+            });
+        }
+
+        function removeFile(index) {
+            attachedFiles.splice(index, 1);
+            updatePreviews();
+        }
+        
+        function clearAllFiles() {
+            attachedFiles = [];
+            updatePreviews();
+        }
+
+        async function extractTextFromPdf(arrayBuffer) {
+            const pdf = await pdfjsLib.getDocument(arrayBuffer).promise;
+            let text = '';
+            for (let i = 1; i <= pdf.numPages; i++) {
+                const page = await pdf.getPage(i);
+                const content = await page.getTextContent();
+                text += content.items.map(item => item.str).join(' ') + '\n';
+            }
+            return text;
+        }
+
+        async function extractTextFromDocx(arrayBuffer) {
+            const result = await mammoth.extractRawText({ arrayBuffer });
+            return result.value;
+        }
+
+        async function extractTextFromXlsx(arrayBuffer) {
+            const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+            let text = '';
+            workbook.SheetNames.forEach(sheetName => {
+                text += `--- シート: ${sheetName} ---\n`;
+                const worksheet = workbook.Sheets[sheetName];
+                text += XLSX.utils.sheet_to_csv(worksheet) + '\n\n';
+            });
+            return text;
+        }
+
+        // --- Chat Logic ---
+        function addMessageToHistory(sender, text, { attachments = [], character = 'shiro' } = {}) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${sender}`;
+            
+            const senderDiv = document.createElement('div');
+            senderDiv.className = `message-sender ${sender}`;
+            
+            if (sender === 'ai') {
+                const char = characterData[character];
+                senderDiv.innerHTML = char.icon + `<span>// ${char.name}_RESPONSE</span>`;
+            } else {
+                senderDiv.textContent = `// USER_INPUT`;
+            }
+            
+            const contentDiv = document.createElement('div');
+            contentDiv.className = 'message-content';
+            
+            attachments.forEach(att => {
+                if (att.type === 'image') {
+                    const img = document.createElement('img');
+                    img.src = att.content;
+                    contentDiv.appendChild(img);
+                } else {
+                    const fileInfo = document.createElement('div');
+                    fileInfo.className = 'attachment-info';
+                    fileInfo.textContent = `Attachment: ${att.name}`;
+                    contentDiv.appendChild(fileInfo);
+                }
+            });
+            
+            const textNode = document.createElement('span');
+            textNode.className = 'ai-response-text';
+            // ★ Use marked.parse to render Markdown
+            textNode.innerHTML = marked.parse(text);
+            contentDiv.appendChild(textNode);
+
+            if (sender === 'ai') {
+                const copyBtn = document.createElement('button');
+                copyBtn.className = 'copy-button';
+                copyBtn.textContent = 'COPY';
+                copyBtn.onclick = (event) => {
+                    const textToCopy = text; // Copy the raw markdown text
+                    navigator.clipboard.writeText(textToCopy);
+                    copyBtn.textContent = 'COPIED!';
+                    setTimeout(() => { copyBtn.textContent = 'COPY'; }, 2000);
+                };
+                contentDiv.appendChild(copyBtn);
+            }
+
+            messageDiv.appendChild(senderDiv);
+            messageDiv.appendChild(contentDiv);
+            chatHistory.appendChild(messageDiv);
+            chatHistory.scrollTop = chatHistory.scrollHeight;
+            
+            // ★ Add copy buttons to code blocks
+            if (sender === 'ai') {
+                addCodeCopyButtons(contentDiv);
+            }
+
+            return contentDiv;
+        }
+        
+        // ★ New function to add copy buttons to code blocks
+        function addCodeCopyButtons(element) {
+            const codeBlocks = element.querySelectorAll('pre');
+            codeBlocks.forEach(block => {
+                const btn = document.createElement('button');
+                btn.className = 'copy-code-button';
+                btn.textContent = 'Copy Code';
+                btn.onclick = () => {
+                    const code = block.querySelector('code').innerText;
+                    navigator.clipboard.writeText(code);
+                    btn.textContent = 'Copied!';
+                    setTimeout(() => { btn.textContent = 'Copy Code'; }, 2000);
+                };
+                block.appendChild(btn);
+            });
+        }
+
+        async function generateResponse() {
+            let prompt = promptInput.value.trim();
+            if (!prompt && attachedFiles.length === 0) return;
+
+            sendButton.disabled = true;
+            promptInput.value = '';
+            promptInput.style.height = 'auto';
+            
+            addMessageToHistory('user', prompt, { attachments: attachedFiles });
+
+            const isMultimodal = attachedFiles.length > 0;
+            const character = isMultimodal ? 'sora' : 'shiro';
+
+            const images = attachedFiles.filter(f => f.type === 'image').map(f => f.content.split(',')[1]);
+            const texts = attachedFiles.filter(f => f.type === 'text').map(f => `--- 文書: ${f.name} ---\n${f.content}`);
+            
+            let combinedText = texts.join('\n\n');
+            if (combinedText) {
+                prompt = `以下の文書の内容に基づいて、次の質問に答えてください。\n\n${combinedText}\n\n---質問---\n${prompt}`;
+            }
+            
+            const userMessage = { role: 'user', content: prompt };
+            if (images.length > 0) {
+                userMessage.images = images;
+            }
+            conversationHistory.push(userMessage);
+            
+            const aiMessageContent = addMessageToHistory('ai', '...', { character: character });
+            
+            const payload = {
+                model: modelSelector.value,
+                messages: conversationHistory,
+                stream: !isMultimodal
+            };
+
+            clearAllFiles();
+
+            try {
+                const response = await fetch('http://localhost:11434/api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!response.ok) throw new Error(`API Error: ${response.statusText}`);
+                
+                let fullResponse = '';
+                if (payload.stream) {
+                    const reader = response.body.getReader();
+                    const decoder = new TextDecoder();
+                    aiMessageContent.querySelector('.ai-response-text').innerHTML = '';
+
+                    while (true) {
+                        const { done, value } = await reader.read();
+                        if (done) break;
+                        
+                        const chunk = decoder.decode(value, { stream: true });
+                        const lines = chunk.split('\n');
+                        
+                        lines.forEach(line => {
+                            if (line) {
+                                try {
+                                    const parsed = JSON.parse(line);
+                                    fullResponse += parsed.message.content;
+                                    aiMessageContent.querySelector('.ai-response-text').innerHTML = marked.parse(fullResponse);
+                                } catch(e) { console.error("JSON parsing error:", e); }
+                            }
+                        });
+                        chatHistory.scrollTop = chatHistory.scrollHeight;
+                    }
+                } else {
+                    const data = await response.json();
+                    fullResponse = data.message.content;
+                    aiMessageContent.querySelector('.ai-response-text').innerHTML = marked.parse(fullResponse);
+                }
+                
+                conversationHistory.push({ role: 'assistant', content: fullResponse });
+                // ★ Finalize by adding copy buttons
+                addCodeCopyButtons(aiMessageContent);
+                // Update the main copy button's functionality
+                const mainCopyBtn = aiMessageContent.querySelector('.copy-button');
+                if(mainCopyBtn) {
+                    mainCopyBtn.onclick = () => {
+                        navigator.clipboard.writeText(fullResponse);
+                        mainCopyBtn.textContent = 'COPIED!';
+                        setTimeout(() => { mainCopyBtn.textContent = 'COPY'; }, 2000);
+                    };
+                }
+
+
+            } catch (error) {
+                aiMessageContent.querySelector('.ai-response-text').textContent = '>> CRITICAL_ERROR\n' + error;
+                console.error('Error:', error);
+                conversationHistory.pop();
+            } finally {
+                sendButton.disabled = false;
+            }
+        }
+    </script>
+</body>
+</html>

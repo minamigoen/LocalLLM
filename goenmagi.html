@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GOEN_LLM:MAGI_SYSTEM</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Russo+One&display=swap" rel="stylesheet">
+    <!-- Required Libraries for File Parsing -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script>
+        pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js`;
+    </script>
+    <style>
+        /* --- NERV HQ Theme --- */
+        body {
+            background-color: #000000;
+            color: #ff6600;
+            font-family: 'Russo One', sans-serif;
+            background-image: url('data:image/svg+xml;charset=UTF-8,<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40"><path d="M20 0 L40 10 L40 30 L20 40 L0 30 L0 10 Z" fill="none" stroke="%23ff6600" stroke-width="0.2"/></svg>');
+            margin: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+        }
+        .chat-container {
+            width: 95%;
+            max-width: 800px;
+            height: 90vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            position: relative;
+            background-color: rgba(20, 20, 20, 0.85);
+            border: 2px solid #ff6600;
+            clip-path: polygon(0 15px, 15px 0, calc(100% - 15px) 0, 100% 15px, 100% calc(100% - 15px), calc(100% - 15px) 100%, 15px 100%, 0 calc(100% - 15px));
+        }
+        .header { flex-shrink: 0; display: flex; justify-content: space-between; align-items: center; padding: 12px 20px; text-transform: uppercase; border-bottom: 2px solid #ff6600; }
+        .header h1 { font-size: 1.2rem; margin: 0; }
+        .controls { display: flex; align-items: center; gap: 10px; }
+        #model-selector, #new-chat-button { padding: 6px 12px; cursor: pointer; background-color: #000; border: 1px solid #ff6600; color: #e0e0e0; font-family: 'Russo One', sans-serif; transition: all 0.2s ease; }
+        #model-selector:hover, #new-chat-button:hover { background-color: #ff6600; color: #000; }
+        .chat-history { flex-grow: 1; overflow-y: auto; padding: 20px; }
+        .message { margin-bottom: 20px; }
+        .message-sender { font-weight: bold; margin-bottom: 5px; display: flex; align-items: center; gap: 8px; }
+        .message-sender.user { color: #ff6600; }
+        .message-sender.ai { color: #99cc00; }
+        .ai-icon { width: 24px; height: 24px; filter: drop-shadow(0 0 3px #99cc00); }
+        .message-content { white-space: pre-wrap; word-wrap: break-word; line-height: 1.6; }
+        .input-container { flex-shrink: 0; padding: 15px; border-top: 2px solid #ff6600; }
+        .input-area { display: flex; gap: 10px; align-items: center; }
+        textarea { flex-grow: 1; resize: none; max-height: 150px; background-color: #000; border: 1px solid #ff6600; color: #e0e0e0; font-family: 'Russo One', sans-serif; padding: 10px; }
+        .button { padding: 10px; display: flex; align-items: center; justify-content: center; cursor: pointer; background-color: #333; border: 1px solid #ff6600; transition: all 0.2s ease; }
+        .button:hover { background-color: #ff6600; }
+        .button:hover svg { fill: #000; }
+        .button svg { width: 24px; height: 24px; fill: #ff6600; transition: all 0.2s ease; }
+        #send-button { background: #ff6600; }
+        #send-button:hover { background: #ff8533; }
+        #send-button svg { fill: #000; }
+        #previews-container { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 10px; max-height: 120px; overflow-y: auto; }
+        .preview-item { position: relative; }
+        .remove-file-button { position: absolute; top: -5px; right: -5px; width: 20px; height: 20px; cursor: pointer; background: #ff6600; color: #000; border: none; border-radius: 50%; }
+        .copy-button { position: absolute; bottom: -5px; right: 0; cursor: pointer; padding: 2px 6px; font-size: 0.7rem; opacity: 0; transition: opacity 0.3s; background: #333; border: 1px solid #ff6600; color: #ff6600; }
+        .message.ai:hover .copy-button { opacity: 1; }
+        .copy-code-button { position: absolute; top: 5px; right: 5px; cursor: pointer; padding: 3px 8px; font-size: 0.8rem; opacity: 0; transition: opacity 0.3s; background: #333; border: 1px solid #ff6600; color: #ff6600; }
+        .message-content pre:hover .copy-code-button { opacity: 1; }
+        pre { background-color: #000; border: 1px solid #ff6600; padding: 10px; }
+        .ai-responses-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; }
+    </style>
+</head>
+<body class="theme-nerv">
+
+    <div class="chat-container" id="chat-container">
+        <div class="header">
+            <h1>[GOEN_LLM::MAGI_SYSTEM]</h1>
+            <div class="controls">
+                <select id="model-selector">
+                    <option value="gemma3:4b">Gemma3 4B (Default)</option>
+                    <option value="gemma3:12b">Gemma3 12B</option>
+                    <option value="llama3:latest">Llama 3</option>
+                </select>
+                <button id="new-chat-button">::NEW_SESSION::</button>
+            </div>
+        </div>
+        <div class="chat-history" id="chat-history"></div>
+        <div class="input-container">
+            <div class="input-area">
+                <input type="file" id="file-input" accept="image/*,application/pdf,.csv,.txt,.xlsx,.xls,.docx" multiple style="display: none;">
+                <button id="attach-button" class="button" title="Attach File">
+                    <svg viewBox="0 0 24 24"><path d="M21.586 10.414l-8.586-8.586c-2.343-2.343-6.142-2.343-8.485 0s-2.343 6.142 0 8.485l10 10c1.562 1.562 4.095 1.562 5.657 0s1.562-4.095 0-5.657l-8.586-8.586c-.781-.781-2.047-.781-2.828 0s-.781 2.047 0 2.828l7.172 7.172c.39.39 1.024.39 1.414 0s.39-1.024 0-1.414l-7.172-7.172-1.414 1.414 7.172 7.172c-1.172 1.172-3.071 1.172-4.243 0s-1.172-3.071 0-4.243l8.586 8.586c1.953 1.953 1.953 5.119 0 7.071s-5.119 1.953-7.071 0l-10-10c-3.124-3.124-3.124-8.189 0-11.313s8.189-3.124 11.313 0l8.586 8.586c.391.391.391 1.024 0 1.414s-1.024.391-1.414 0z"/></svg>
+                </button>
+                <textarea id="prompt-input" rows="1" placeholder="> COMMAND_INPUT..."></textarea>
+                <button id="send-button" class="button" title="Execute">
+                    <svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+                </button>
+            </div>
+             <div id="previews-container"></div>
+        </div>
+    </div>
+
+    <script>
+        // --- DOM Elements ---
+        const chatContainer = document.getElementById('chat-container');
+        const sendButton = document.getElementById('send-button');
+        const promptInput = document.getElementById('prompt-input');
+        const chatHistory = document.getElementById('chat-history');
+        const modelSelector = document.getElementById('model-selector');
+        const newChatButton = document.getElementById('new-chat-button');
+        const attachButton = document.getElementById('attach-button');
+        const fileInput = document.getElementById('file-input');
+        const previewsContainer = document.getElementById('previews-container');
+
+        // --- State ---
+        let attachedFiles = [];
+        let conversationHistory = [];
+
+        // --- SVG Icon Data ---
+        const characterData = {
+            melchior: {
+                name: "HAKU-MELCHIOR-1",
+                icon: `<svg class="ai-icon" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="4"><circle cx="50" cy="50" r="30"/><path d="M50 20 V80 M20 50 H80"/></svg>`
+            },
+            balthasar: {
+                name: "HAKU-BALTHASAR-2",
+                icon: `<svg class="ai-icon" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="4"><rect x="25" y="25" width="50" height="50" rx="5"/></svg>`
+            },
+            casper: {
+                name: "HAKU-CASPER-3",
+                icon: `<svg class="ai-icon" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="4"><path d="M50 20 L75 70 L25 70 Z"/></svg>`
+            },
+            sora: {
+                name: "SORA",
+                icon: `<svg class="ai-icon" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="4"><path d="M50,25 A25,25 0,1,1 50,75 A25,25 0,1,1 50,25" /><path d="M25,55 A25,25 0,0,0 75,55" /><ellipse cx="40" cy="48" rx="4" ry="5" fill="currentColor"/><ellipse cx="60" cy="48" rx="4" ry="5" fill="currentColor"/><path d="M45,62 Q50,66 55,62" /></svg>`
+            }
+        };
+
+        // --- Event Listeners ---
+        attachButton.addEventListener('click', () => fileInput.click());
+        fileInput.addEventListener('change', (e) => handleFiles(e.target.files));
+        sendButton.addEventListener('click', generateResponse);
+        newChatButton.addEventListener('click', () => {
+            chatHistory.innerHTML = '';
+            clearAllFiles();
+            conversationHistory = [];
+        });
+        promptInput.addEventListener('input', () => {
+            promptInput.style.height = 'auto';
+            promptInput.style.height = (promptInput.scrollHeight) + 'px';
+        });
+        promptInput.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                generateResponse();
+            }
+        });
+        chatContainer.addEventListener('dragover', (e) => { e.preventDefault(); e.stopPropagation(); chatContainer.classList.add('dragover'); });
+        chatContainer.addEventListener('dragleave', (e) => { e.preventDefault(); e.stopPropagation(); chatContainer.classList.remove('dragover'); });
+        chatContainer.addEventListener('drop', (e) => { e.preventDefault(); e.stopPropagation(); chatContainer.classList.remove('dragover'); handleFiles(e.dataTransfer.files); });
+        document.addEventListener('paste', (e) => { handleFiles(e.clipboardData.files); });
+
+        // --- File & Clipboard Handling ---
+        async function handleFiles(files){/*...*/}
+        function updatePreviews(){/*...*/}
+        function removeFile(index){/*...*/}
+        function clearAllFiles(){/*...*/}
+        async function extractTextFromPdf(arrayBuffer){/*...*/}
+        async function extractTextFromDocx(arrayBuffer){/*...*/}
+        async function extractTextFromXlsx(arrayBuffer){/*...*/}
+
+
+        // --- Chat Logic (MAGI Implementation) ---
+        function addMessageToHistory(sender, text, { attachments = [], character = 'melchior' } = {}) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${sender}`;
+            
+            const senderDiv = document.createElement('div');
+            senderDiv.className = `message-sender ${sender}`;
+            
+            if (sender === 'ai') {
+                const char = characterData[character];
+                senderDiv.innerHTML = char.icon + `<span>// ${char.name}_RESPONSE</span>`;
+            } else {
+                senderDiv.textContent = `// USER_INPUT`;
+            }
+            
+            const contentDiv = document.createElement('div');
+            contentDiv.className = 'message-content';
+            
+            attachments.forEach(att => {
+                if (att.type === 'image') {
+                    const img = document.createElement('img');
+                    img.src = att.content;
+                    contentDiv.appendChild(img);
+                } else {
+                    const fileInfo = document.createElement('div');
+                    fileInfo.className = 'attachment-info';
+                    fileInfo.textContent = `Attachment: ${att.name}`;
+                    contentDiv.appendChild(fileInfo);
+                }
+            });
+            
+            const textNode = document.createElement('span');
+            textNode.className = 'ai-response-text';
+            textNode.innerHTML = marked.parse(text);
+            contentDiv.appendChild(textNode);
+
+            if (sender === 'ai') {
+                const copyBtn = document.createElement('button');
+                copyBtn.className = 'copy-button';
+                copyBtn.textContent = 'COPY';
+                contentDiv.appendChild(copyBtn);
+            }
+
+            messageDiv.appendChild(senderDiv);
+            messageDiv.appendChild(contentDiv);
+            chatHistory.appendChild(messageDiv);
+            chatHistory.scrollTop = chatHistory.scrollHeight;
+            
+            if (sender === 'ai') {
+                addCodeCopyButtons(contentDiv);
+            }
+
+            return contentDiv;
+        }
+        
+        function addCodeCopyButtons(element) {
+            const codeBlocks = element.querySelectorAll('pre');
+            codeBlocks.forEach(block => {
+                const btn = document.createElement('button');
+                btn.className = 'copy-code-button';
+                btn.textContent = 'Copy Code';
+                btn.onclick = () => {
+                    const code = block.querySelector('code').innerText;
+                    navigator.clipboard.writeText(code);
+                    btn.textContent = 'Copied!';
+                    setTimeout(() => { btn.textContent = 'Copy Code'; }, 2000);
+                };
+                block.appendChild(btn);
+            });
+        }
+
+        async function generateResponse() {
+            let prompt = promptInput.value.trim();
+            if (!prompt && attachedFiles.length === 0) return;
+
+            sendButton.disabled = true;
+            promptInput.value = '';
+            promptInput.style.height = 'auto';
+            
+            addMessageToHistory('user', prompt, { attachments: attachedFiles });
+
+            const isMultimodal = attachedFiles.length > 0;
+
+            if (isMultimodal) {
+                await generateSoraResponse(prompt);
+            } else {
+                await generateMagiResponse(prompt);
+            }
+
+            sendButton.disabled = false;
+        }
+
+        async function generateSoraResponse(prompt) {
+            const character = 'sora';
+            const images = attachedFiles.filter(f => f.type === 'image').map(f => f.content.split(',')[1]);
+            const texts = attachedFiles.filter(f => f.type === 'text').map(f => `--- 文書: ${f.name} ---\n${f.content}`);
+            let combinedText = texts.join('\n\n');
+            if (combinedText) {
+                prompt = `以下の文書の内容に基づいて、次の質問に答えてください。\n\n${combinedText}\n\n---質問---\n${prompt}`;
+            }
+            
+            const userMessage = { role: 'user', content: prompt, images: images.length > 0 ? images : undefined };
+            conversationHistory.push(userMessage);
+            
+            const aiMessageContent = addMessageToHistory('ai', '...', { character });
+            const payload = { model: 'gemma3:12b', messages: conversationHistory, stream: false };
+            clearAllFiles();
+
+            try {
+                const response = await fetch('http://localhost:11434/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+                if (!response.ok) throw new Error(`API Error: ${response.statusText}`);
+                const data = await response.json();
+                const fullResponse = data.message.content;
+                aiMessageContent.querySelector('.ai-response-text').innerHTML = marked.parse(fullResponse);
+                conversationHistory.push({ role: 'assistant', content: fullResponse });
+                addCodeCopyButtons(aiMessageContent);
+                const copyBtn = aiMessageContent.querySelector('.copy-button');
+                if (copyBtn) {
+                    copyBtn.onclick = () => {
+                        navigator.clipboard.writeText(fullResponse);
+                        copyBtn.textContent = 'COPIED!';
+                        setTimeout(() => { copyBtn.textContent = 'COPY'; }, 2000);
+                    };
+                }
+            } catch (error) {
+                aiMessageContent.querySelector('.ai-response-text').textContent = '>> CRITICAL_ERROR\n' + error;
+                conversationHistory.pop();
+            }
+        }
+
+        async function generateMagiResponse(prompt) {
+            const baseUserMessage = { role: 'user', content: prompt };
+            conversationHistory.push(baseUserMessage);
+
+            const magiPersonalities = [
+                { name: 'melchior', persona: 'あなたは科学者ペルソナのAI、MELCHIOR-1です。あらゆる諮問に対し、必ず応答の最初に【賛成】か【反対】かの立場を明確に示してください。その上で、客観的なデータと論理に基づいた、科学的根拠を説明してください。' },
+                { name: 'balthasar', persona: 'あなたは母ペルソナのAI、BALTHASAR-2です。あらゆる諮問に対し、必ず応答の最初に【賛成】か【反対】かの立場を明確に示してください。その上で、倫理、道徳、人道を最優先し、慈愛に満ちた観点から理由を説明してください。' },
+                { name: 'casper', persona: 'あなたは女ペルソナのAI、CASPER-3です。あらゆる諮問に対し、必ず応答の最初に【賛成】か【反対】かの立場を明確に示してください。その上で、現実的な利害、社会への影響、個人の感情といった人間的観点から理由を説明してください。' }
+            ];
+
+            const responseGrid = document.createElement('div');
+            responseGrid.className = 'ai-responses-grid';
+            chatHistory.appendChild(responseGrid);
+
+            const promises = magiPersonalities.map(p => {
+                const messageContainer = document.createElement('div');
+                responseGrid.appendChild(messageContainer);
+                const contentDiv = addMessageToHistory('ai', '...', { character: p.name });
+                messageContainer.appendChild(contentDiv.parentElement);
+
+                const messagesWithPersona = [...conversationHistory.slice(0, -1), { role: 'system', content: p.persona }, baseUserMessage];
+                const payload = { model: modelSelector.value, messages: messagesWithPersona, stream: false };
+
+                return fetch('http://localhost:11434/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+                    .then(res => {
+                        if (!res.ok) throw new Error(`API Error for ${p.name}: ${res.statusText}`);
+                        return res.json();
+                    })
+                    .then(data => ({ name: p.name, content: data.message.content, contentDiv: contentDiv }))
+                    .catch(error => ({ name: p.name, content: `>> CRITICAL_ERROR\n${error}`, contentDiv: contentDiv, isError: true }));
+            });
+
+            const results = await Promise.all(promises);
+            let finalAiResponses = [];
+            results.forEach(result => {
+                result.contentDiv.querySelector('.ai-response-text').innerHTML = marked.parse(result.content);
+                addCodeCopyButtons(result.contentDiv);
+                const copyBtn = result.contentDiv.querySelector('.copy-button');
+                if (copyBtn) {
+                     copyBtn.onclick = () => {
+                        navigator.clipboard.writeText(result.content);
+                        copyBtn.textContent = 'COPIED!';
+                        setTimeout(() => { copyBtn.textContent = 'COPY'; }, 2000);
+                    };
+                }
+                if (!result.isError) {
+                    finalAiResponses.push(`--- ${result.name}の回答 ---\n${result.content}`);
+                }
+            });
+            
+            conversationHistory.push({ role: 'assistant', content: finalAiResponses.join('\n\n') });
+        }
+        
+        // Minified version of unchanged JS for brevity
+        handleFiles=async function(e){if(!e||0===e.length)return;const t=Array.from(e).map(e=>new Promise((t,r)=>{const o={id:Date.now()+Math.random(),name:e.name,type:null,content:null},n=new FileReader;n.onload=async n=>{try{const a=n.target.result;e.type.startsWith("image/")?(o.type="image",o.content=a):"application/pdf"===e.type?(o.type="text",o.content=await extractTextFromPdf(a)):e.name.endsWith(".docx")?(o.type="text",o.content=await extractTextFromDocx(a)):e.name.endsWith(".xlsx")||e.name.endsWith(".xls")?(o.type="text",o.content=await extractTextFromXlsx(a)):(o.type="text",o.content=a),t(o)}catch(e){r(e)}},n.onerror=r,e.type.startsWith("image/")?n.readAsDataURL(e):"application/pdf"===e.type||e.name.endsWith(".docx")||e.name.endsWith(".xlsx")||e.name.endsWith(".xls")?n.readAsArrayBuffer(e):n.readAsText(e)}));try{const e=await Promise.all(t);attachedFiles.push(...e),updatePreviews()}catch(e){console.error("Error processing files:",e),addMessageToHistory("ai","ファイルの処理中にエラーが発生しました。",{character:"sora"})}fileInput.value=""};updatePreviews=function(){previewsContainer.innerHTML="",attachedFiles.forEach((e,t)=>{const r=document.createElement("div");r.className="preview-item","image"===e.type?(()=>{const t=document.createElement("img");t.src=e.content,r.appendChild(t)})():(()=>{const t=document.createElement("span");t.className="filename",t.textContent=e.name,r.appendChild(t)})();const o=document.createElement("button");o.className="remove-file-button",o.textContent="X",o.onclick=()=>removeFile(t),r.appendChild(o),previewsContainer.appendChild(r)})};removeFile=function(e){attachedFiles.splice(e,1),updatePreviews()};clearAllFiles=function(){attachedFiles=[],updatePreviews()};extractTextFromPdf=async function(e){const t=await pdfjsLib.getDocument(e).promise;let r="";for(let e=1;e<=t.numPages;e++){const o=await t.getPage(e),n=await o.getTextContent();r+=n.items.map(e=>e.str).join(" ")+"\n"}return r};extractTextFromDocx=async function(e){const t=await mammoth.extractRawText({arrayBuffer:e});return t.value};extractTextFromXlsx=async function(e){const t=XLSX.read(e,{type:"array"});let r="";return t.SheetNames.forEach(e=>{r+=`--- シート: ${e} ---\n`;const o=t.Sheets[e];r+=XLSX.utils.sheet_to_csv(o)+"\n\n"}),r};
+    </script>
+</body>
+</html>
